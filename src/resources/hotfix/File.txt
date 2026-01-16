@@ -1,1 +1,0 @@
-Constants.c24.rawValue
