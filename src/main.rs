@@ -2,7 +2,6 @@ use std::os::unix::process::CommandExt;
 use std::{fs, process::Command};
 use std::path::Path;
 
-use crossterm::event::KeyEvent;
 use regex::Regex;
 
 use ratatui::{
@@ -43,11 +42,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         String::new(),
     ];
     let labels = vec![
-        "Entet_path to your directory. FE: src/data:",
-        "Enter INCLUDED files extension comma separated, FE: swift,txt:",
-        "Enter EXCLUDED directory names comma separated, FE: private,design:",
-        "Enter search regex FE: Constants\\.c(\\d+)\\.rawValue:",
-        "Enter replace regex FE: Constants.c#$1#.rawValue, $1 = first capture group):",
+        "Entet_path_to_your_directory_FE:_src/data:",
+        "Enter_INCLUDED_files_extension_comma_separated,_FE:_swift,txt:",
+        "Enter_EXCLUDED_directory_names_comma_separated,_FE:_private,design:",
+        "Enter_search_regex_FE:_Constants\\.c(\\d+)\\.rawValue:",
+        "Enter_replace_regex_FE:_Constants.c#$1#.rawValue,_$1_=_first capture group):",
     ];
     let mut current_field = 0;
 
@@ -92,7 +91,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             KeyCode::Up => { if current_field > 0 { current_field -= 1; } },
             KeyCode::Down => { if current_field < inputs.len() - 1 { current_field += 1; } },
             KeyCode::Esc => { 
+                disable_raw_mode()?;
                 clear_term();
+                reset();
                 return Ok(())
             },
             _ => {}
@@ -100,7 +101,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }       
     }
 
-    disable_raw_mode()?; 
     clear_term();
 
     let path = &inputs[0];
@@ -115,6 +115,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     clear_term();
     println!("Готово!");
 
+    disable_raw_mode()?;
+    reset();
     Ok(())
 }
 
@@ -190,3 +192,10 @@ fn clear_term() {
         .arg("clear")
         .exec();
 }
+
+fn reset() {
+    let _ = Command::new("bash")
+        .arg("-c")
+        .arg("reset")
+        .exec();
+}   
