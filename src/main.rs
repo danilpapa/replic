@@ -1,14 +1,15 @@
 use std::fs;
 use std::path::Path;
 
+use regex::Regex;
+
 fn main() {
     let included_extensions: Vec<&str> = vec!["swift", "txt"];
     let excluded_paths: Vec<&str> = vec!["private"];
+    let re = Regex::new(r"Constants\.c(\d+)\.rawValue").unwrap();  
 
-    let result = walk_dir("src", &included_extensions, &excluded_paths);
-    for path in result {
-        println!("{}", path);
-    }
+    let paths = walk_dir("src", &included_extensions, &excluded_paths);
+    find_and_replace(&paths, &re);
 }
 
 fn walk_dir<P: AsRef<Path>>( // типа PathConvertible- что угодно что возвращается в Path
@@ -44,4 +45,25 @@ fn walk_dir<P: AsRef<Path>>( // типа PathConvertible- что угодно ч
             });
     }
     paths
+}
+
+fn find_and_replace(paths: &Vec<String>, regex: &Regex) {
+    for path in paths {
+        match fs::read_to_string(&path) {
+            Ok(contents) => {
+                let updated = regex.replace_all(
+                    &contents,
+                    "Constants.c$1"
+                );
+                if updated == contents { continue; }
+
+                if let Err(writing_error) = fs::write(path, updated.as_bytes()) {
+                    eprintln!("Не удалось записать {}: {}", path, writing_error);
+                }
+            }
+            Err(err) => {
+                eprintln!("Не удалось прочитать {}: {}", path, err);
+            }
+        }
+    }
 }
