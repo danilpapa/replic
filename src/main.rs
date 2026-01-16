@@ -1,6 +1,8 @@
-use std::fs;
+use std::os::unix::process::CommandExt;
+use std::{fs, process::Command};
 use std::path::Path;
 
+use crossterm::event::KeyEvent;
 use regex::Regex;
 
 use ratatui::{
@@ -9,79 +11,97 @@ use ratatui::{
 use crossterm::{event::{self, Event, KeyCode}, terminal::{disable_raw_mode, enable_raw_mode}};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    enable_raw_mode()?; // включаем raw mode для корректной работы TUI
+    /*
+    Этот блок кода создаёт текстовый пользовательский интерфейс (TUI)
+    в терминале с помощью Rust и библиотек RatatUI (для визуальных компонентов) 
+    и Crossterm (для работы с терминалом и событиями клавиатуры). 
+    
+    Он включает пять интерактивных полей ввода: 
+        путь к директории, 
+        включённые расширения файлов, 
+        исключаемые директории/файлы, 
+        регулярное выражение для поиска и регулярное выражение для замены. 
+    
+    Функция enable_raw_mode() переводит терминал в режим "raw", 
+    позволяя отслеживать нажатия клавиш в реальном времени, 
+    а Terminal с CrosstermBackend обеспечивает рендеринг интерфейса.
+    
+    Поля ввода выделяются, поддерживаются клавиши навигации (стрелки вверх/вниз), 
+    редактирование текста (Backspace, ввод символов) и подтверждение (Enter). 
+    
+    Внизу экрана отображается подсказка для пользователя с инструкциями.
+    */
+    enable_raw_mode()?;
     let stdout = std::io::stdout();
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
-
     let mut inputs = vec![
-        String::new(), // path
-        String::new(), // included extensions
-        String::new(), // excluded dirs/files
-        String::new(), // regex search
-        String::new(), // regex replace
+        String::new(),
+        String::new(), 
+        String::new(), 
+        String::new(), 
+        String::new(),
     ];
-
     let labels = vec![
-        "Введите путь к директории (например src):",
-        "Введите включённые расширения файлов (через запятую, например swift,txt):",
-        "Введите исключаемые директории/файлы (через запятую, например private,tmp):",
-        "Введите регулярку поиска (пример: Constants\\.c(\\d+)\\.rawValue):",
-        "Введите регулярку замены (пример: Constants.c#$1#.rawValue, $1 = первая capture группа):",
+        "Entet_path to your directory. FE: src/data:",
+        "Enter INCLUDED files extension comma separated, FE: swift,txt:",
+        "Enter EXCLUDED directory names comma separated, FE: private,design:",
+        "Enter search regex FE: Constants\\.c(\\d+)\\.rawValue:",
+        "Enter replace regex FE: Constants.c#$1#.rawValue, $1 = first capture group):",
     ];
-
     let mut current_field = 0;
 
     loop {
         terminal.draw(|f| {
             let size = f.area();
+
+            let mut constraints = labels.iter().map(|_| Constraint::Length(3)).collect::<Vec<_>>();
+            constraints.push(Constraint::Min(3));
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
-                .constraints(
-                    labels.iter().map(|_| Constraint::Length(3)).collect::<Vec<_>>()
-                )
+                .constraints(&constraints) 
                 .split(size);
 
             for (i, chunk) in chunks.iter().enumerate() {
-                let title = if i == current_field {
-                    format!("> {}", labels[i]) 
+                if i < labels.len() {
+                    let title = if i == current_field { format!("> {}", labels[i]) } else { labels[i].to_string() };
+                    let paragraph = Paragraph::new(Text::from(inputs[i].as_str()))
+                        .block(Block::default().title(title).borders(Borders::ALL));
+                    f.render_widget(paragraph, *chunk);
                 } else {
-                    labels[i].to_string()
-                };
-                let paragraph = Paragraph::new(Text::from(inputs[i].as_str()))
-                    .block(Block::default().title(title).borders(Borders::ALL));
-                f.render_widget(paragraph, *chunk);
+                    let help_text = "Перед использованием ознакомьтесь с документацией в src/doc/doc.md\n\
+                    для работы со скриптом и регулярными выражениями.";
+                    let help_paragraph = Paragraph::new(Text::from(help_text))
+                        .block(Block::default().borders(Borders::ALL).title("Подсказка"));
+                    f.render_widget(help_paragraph, *chunk);
+                }
             }
         })?;
 
         if let Event::Key(key) = event::read()? {
-            match key.code {
-                KeyCode::Char(c) => inputs[current_field].push(c),
-                KeyCode::Backspace => { inputs[current_field].pop(); },
-                KeyCode::Enter => {
-                    if current_field == inputs.len() - 1 {
-                        break;
-                    } else {
-                        current_field += 1;
-                    }
-                },
-                KeyCode::Up => {
-                    if current_field > 0 { current_field -= 1; }
-                },
-                KeyCode::Down => {
-                    if current_field < inputs.len() - 1 { current_field += 1; }
-                },
-                KeyCode::Esc => {
-                    terminal.clear()?;
-                    return Ok(())
-                },
-                _ => {}
+        match key.code {
+            KeyCode::Char(c) => inputs[current_field].push(c),
+            KeyCode::Backspace => { inputs[current_field].pop(); },
+            KeyCode::Enter => {
+                if current_field == inputs.len() - 1 {
+                    break;
+                } else {
+                    current_field += 1;
+                }
+            },
+            KeyCode::Up => { if current_field > 0 { current_field -= 1; } },
+            KeyCode::Down => { if current_field < inputs.len() - 1 { current_field += 1; } },
+            KeyCode::Esc => { 
+                clear_term();
+                return Ok(())
+            },
+            _ => {}
             }
-        }
+        }       
     }
 
     disable_raw_mode()?; 
-    terminal.clear()?; 
+    clear_term();
 
     let path = &inputs[0];
     let included_extensions: Vec<&str> = inputs[1].split(',').map(|s| s.trim()).collect();
@@ -89,18 +109,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let regex_search = Regex::new(&inputs[3])?;
     let regex_replace = &inputs[4];
 
-    // println!("{} {?:} {?:} {} {}", path, included_extensions, excluded_paths, regex_search, regex_replace);
-
     let paths = walk_dir(path, &included_extensions, &excluded_paths);
     find_and_replace_with_replacement(&paths, &regex_search, regex_replace);
 
-    terminal.clear()?;
+    clear_term();
     println!("Готово!");
 
     Ok(())
 }
 
-fn walk_dir<P: AsRef<Path>>( // типа PathConvertible- что угодно что возвращается в Path
+/// Рекурсивно обходит указанную директорию и собирает все файлы, которые:
+/// 1. Имеют расширение, указанное в `included_extensions`.
+/// 2. Не находятся в директориях, перечисленных в `excluded_paths`.
+///
+/// Использует стандартную библиотеку Rust (`std::fs`, `std::path`) для работы с файловой системой.
+/// `AsRef<Path>` позволяет передавать любые типы, которые могут быть преобразованы в `Path`.
+/// Возвращает вектор строковых путей ко всем подходящим файлам.
+fn walk_dir<P: AsRef<Path>>(
     path: P,
     included_extensions: &[&str],
     excluded_paths: &[&str],
@@ -135,6 +160,12 @@ fn walk_dir<P: AsRef<Path>>( // типа PathConvertible- что угодно ч
     paths
 }
 
+/// Проходит по списку файлов `paths`, ищет в них все вхождения регулярного выражения `regex`
+/// и заменяет их на строку `replacement`.
+///
+/// Использует стандартную библиотеку `std::fs` для чтения и записи файлов и crate `regex`
+/// для поиска по регулярному выражению. Если файл не может быть прочитан или записан,
+/// выводит сообщение об ошибке в stderr.
 fn find_and_replace_with_replacement(paths: &[String], regex: &Regex, replacement: &str) {
     for path in paths {
         match fs::read_to_string(path) {
@@ -150,4 +181,12 @@ fn find_and_replace_with_replacement(paths: &[String], regex: &Regex, replacemen
             }
         }
     }
+}
+
+/// Очищает терминал, выполняя команду `clear` через Bash.
+fn clear_term() {
+    let _ = Command::new("bash")
+        .arg("-c")
+        .arg("clear")
+        .exec();
 }
