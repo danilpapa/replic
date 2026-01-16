@@ -190,12 +190,12 @@ fn clear_term() {
     let _ = Command::new("bash")
         .arg("-c")
         .arg("clear")
-        .exec();
+        .status();
 }
 
 fn reset() {
     let _ = Command::new("bash")
         .arg("-c")
         .arg("reset")
-        .exec();
-}   
+        .status();
+}
